@@ -22,19 +22,17 @@ CONVICTION STAKING (what makes this different from a simple escrow):
     is slashed to the beneficiary. Backers therefore put skin in the game behind
     someone else's credibility - a reputation market, not a work escrow.
 
-FLOW:
-    maker    -> open_oath(statement, proof_url, beneficiary, criteria)  [stakes]
-    backer*  -> back_oath(oath_id)                                      [co-stakes]
-    anyone   -> resolve(oath_id)   ...contract reads proof_url + LLM rules...
-      KEPT         -> pot refunded pro-rata to maker + backers
-      BROKEN       -> pot slashed to beneficiary
-      INCONCLUSIVE -> stays open for ONE stricter re-check via escalate()
-
 CONSENSUS DESIGN (Axis 2 - the critical part):
     Validators do NOT agree on byte-identical JSON. Each validator INDEPENDENTLY
     fetches proof_url, runs its own LLM, and agrees only if its OWN verdict
     (KEPT / BROKEN / INCONCLUSIVE) matches the leader's. Differently-worded
     rationales still reach consensus; a genuine KEPT-vs-BROKEN split does not.
+
+STORAGE NOTE:
+    Backings are kept in a FLAT TreeMap keyed by an auto-incrementing id (each
+    record carries its oath_id), rather than a TreeMap of nested dynamic arrays.
+    GenVM storage does not support nested dynamic collections, so the flat layout
+    is both correct and portable.
 """
 
 from genlayer import *
@@ -46,13 +44,10 @@ from dataclasses import dataclass
 ZERO_ADDR = Address(b"\x00" * 20)
 
 
-# -----------------------------------------------------------------------------
-# Storage records - every persisted integer is `bigint` (R14).
-# -----------------------------------------------------------------------------
-
 @allow_storage
 @dataclass
 class Backing:
+    oath_id: u256
     backer: Address
     amount: bigint
 
@@ -67,7 +62,7 @@ class Oath:
     criteria: str               # optional extra judging rules from the maker
     maker_stake: bigint         # maker's own contribution, in wei
     pot: bigint                 # maker_stake + every backing, in wei
-    status: str                 # OPEN | KEPT | BROKEN | INCONCLUSIVE | SETTLED_KEPT | SETTLED_BROKEN
+    status: str                 # OPEN | INCONCLUSIVE | SETTLED_KEPT | SETTLED_BROKEN
     verdict: str                # KEPT | BROKEN | INCONCLUSIVE | "" (not judged)
     rationale: str              # AI explanation of the ruling
     escalated: bool             # has the single stricter re-check been used
@@ -75,12 +70,14 @@ class Oath:
 
 class Contract(gl.Contract):
     oaths: TreeMap[u256, Oath]
-    backings: TreeMap[u256, DynArray[Backing]]
+    backings: TreeMap[u256, Backing]   # backing_id -> Backing (carries oath_id)
     next_id: bigint
+    next_backing_id: bigint
     total_locked: bigint
 
     def __init__(self):
         self.next_id = bigint(0)
+        self.next_backing_id = bigint(0)
         self.total_locked = bigint(0)
 
     # -- helpers --------------------------------------------------------------
@@ -95,6 +92,11 @@ class Contract(gl.Contract):
             return addr.as_hex
         except Exception:
             return str(addr)
+
+    def _record_backing(self, oath_id: u256, backer: Address, amount: int) -> None:
+        bid = u256(self.next_backing_id)
+        self.backings[bid] = Backing(oath_id=oath_id, backer=backer, amount=bigint(amount))
+        self.next_backing_id = self.next_backing_id + bigint(1)
 
     # -- maker opens a bonded oath --------------------------------------------
 
@@ -136,10 +138,7 @@ class Contract(gl.Contract):
             rationale="",
             escalated=False,
         )
-        self.backings[oath_id] = DynArray[Backing]()
-        self.backings[oath_id].append(
-            Backing(backer=gl.message.sender_address, amount=bigint(amount))
-        )
+        self._record_backing(oath_id, gl.message.sender_address, amount)
         self.next_id = self.next_id + bigint(1)
         self.total_locked = self.total_locked + bigint(amount)
         return oath_id
@@ -157,9 +156,7 @@ class Contract(gl.Contract):
         if gl.message.sender_address == oath.beneficiary:
             raise Exception("Beneficiary cannot back the oath")
 
-        self.backings[oath_id].append(
-            Backing(backer=gl.message.sender_address, amount=bigint(amount))
-        )
+        self._record_backing(oath_id, gl.message.sender_address, amount)
         oath.pot = oath.pot + bigint(amount)
         self.total_locked = self.total_locked + bigint(amount)
 
@@ -171,7 +168,6 @@ class Contract(gl.Contract):
         if oath.status != "OPEN":
             raise Exception("Oath is not awaiting resolution")
 
-        # Read storage BEFORE the nondet block (nondet cannot touch storage).
         statement = oath.statement
         proof_url = oath.proof_url
         criteria = oath.criteria
@@ -199,8 +195,6 @@ class Contract(gl.Contract):
         verdict, rationale = self._judge(statement, proof_url, criteria, strict=True)
         oath.verdict = verdict
         oath.rationale = "RE-CHECK: " + rationale
-        # A stricter re-check that is STILL inconclusive resolves against the
-        # maker: an unprovable promise does not get to keep the bond forever.
         if verdict == "INCONCLUSIVE":
             verdict = "BROKEN"
             oath.verdict = "BROKEN"
@@ -216,16 +210,18 @@ class Contract(gl.Contract):
         elif verdict == "BROKEN":
             oath.status = "SETTLED_BROKEN"
             self._slash_to_beneficiary(oath_id, oath)
-        else:  # INCONCLUSIVE on a first pass - leave open for escalate()
+        else:
             oath.status = "INCONCLUSIVE"
         return oath.status
 
     def _refund_contributors(self, oath_id: u256, oath: Oath) -> None:
-        # mark terminal BEFORE transfers (re-entrancy safety, R15)
+        # terminal status already set by caller (re-entrancy safety, R15)
         moved = bigint(0)
-        for b in self.backings[oath_id]:
-            moved = moved + b.amount
-            gl.get_contract_at(b.backer).emit_transfer(value=u256(b.amount))
+        for bid in self.backings:
+            b = self.backings[bid]
+            if b.oath_id == oath_id:
+                moved = moved + b.amount
+                gl.get_contract_at(b.backer).emit_transfer(value=u256(b.amount))
         self.total_locked = self.total_locked - moved
 
     def _slash_to_beneficiary(self, oath_id: u256, oath: Oath) -> None:
@@ -304,8 +300,6 @@ Respond with ONLY a JSON object, no prose, no markdown:
             except Exception:
                 return False
             my_verdict = _extract(mine)
-            # meaning-level consensus: agree only if the VERDICT matches; the
-            # free-text rationale is deliberately ignored.
             return my_verdict != "" and my_verdict == leader_verdict
 
         runner = getattr(gl.vm, "run_nondet", None) or gl.vm.run_nondet_unsafe
@@ -329,8 +323,10 @@ Respond with ONLY a JSON object, no prose, no markdown:
     def get_oath(self, oath_id: u256) -> str:
         oath = self._require_oath(oath_id)
         backers = []
-        for b in self.backings[oath_id]:
-            backers.append({"backer": self._addr_str(b.backer), "amount": str(int(b.amount))})
+        for bid in self.backings:
+            b = self.backings[bid]
+            if b.oath_id == oath_id:
+                backers.append({"backer": self._addr_str(b.backer), "amount": str(int(b.amount))})
         return json.dumps(self._oath_dict(oath_id, oath, backers))
 
     @gl.public.view
