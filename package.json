@@ -1,0 +1,14 @@
+{
+  "name": "oathbond-gen",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Conviction-staked accountability bonds judged by a GenLayer AI validator jury.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "python3 -m http.server --directory frontend 8080",
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "dependencies": {
+    "genlayer-js": "^1.1.8"
+  }
+}
