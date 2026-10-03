@@ -9,9 +9,9 @@ no oracle, no human referee.
 
 - **Live app:** https://oathbond.vercel.app
 - **Source:** https://github.com/phu1271997/oathbond
-- **Contract (studionet):** `0x406ac5a6297D49ae8d97155b1f43DaCB8cdc6903`
-- **Deploy tx:** `0x701fc713febeaaf66a2b512ab03d1c9c1c8258d45bb49921f2b9f0e08e95c87b`
-- **Explorer:** https://explorer-studio.genlayer.com/address/0x406ac5a6297D49ae8d97155b1f43DaCB8cdc6903
+- **Contract (studionet):** `0x631e51d15d03504a863CFf393A4B2CB487467820`
+- **Deploy tx:** `0xd3a81741d3e5e7c92a8842e050663e52e456e066be5d6c421a8d3d2419ed90a1`
+- **Explorer:** https://explorer-studio.genlayer.com/address/0x631e51d15d03504a863CFf393A4B2CB487467820
 - **Network:** GenLayer **studionet** (via GenLayer Studio)
 
 ---
@@ -66,14 +66,38 @@ anyone   -> escalate(oath_id)     ...strict re-read; still unverifiable => BROKE
 - Backing a non-open oath, resolving twice → rejected.
 - Terminal state is written **before** any value transfer (re-entrancy safety).
 
+## Frontend routes
+
+The dApp is split into dedicated views rather than one crammed page:
+
+| Route | Purpose |
+|---|---|
+| `/` | **Make an oath** — connect wallet, stake a bond, and act on oaths awaiting a verdict (resolve / back / escalate). Primary actions only. |
+| `/explorer` | **Public ledger** — read-only, no wallet needed. Every oath with its verdict, rationale, pot, payout destination, and filters (All / Open / Inconclusive / Kept / Broken). This is the transparency layer. |
+
+## Seeded on-chain demo
+
+The live contract already holds real, jury-resolved oaths so the Explorer is not empty:
+
+- **Oath #0 — KEPT** — "The GenLayer documentation site is publicly live" → the jury fetched
+  `https://docs.genlayer.com` and ruled KEPT; the bond was refunded to the maker.
+- **Oath #1 — BROKEN** — "This page proves we shipped our iOS app" citing a placeholder page →
+  first pass INCONCLUSIVE, then `escalate()` ruled BROKEN; pot slashed to the beneficiary path.
+
+Reproduce with `source ~/.genlayer/env.sh && node scripts/seed.mjs`.
+
 ## Project layout
 
 ```
 contracts/oathbond.py     # the Intelligent Contract
-frontend/index.html       # genlayer-js dApp (MetaMask signs; no key in the bundle)
+frontend/index.html       # Home route (assert + act)
+frontend/explorer.html    # /explorer route (read-only ledger)
+frontend/app.js           # shared genlayer-js client (MetaMask signs; no key in the bundle)
+frontend/styles.css       # shared styles
 tests/test_oathbond.py    # gltest: happy path + edge cases (LLM/web mocked)
 scripts/deploy.mjs        # deploy to studionet, writes address to .env
-scripts/build.mjs         # bakes the address into the frontend (Vercel build step)
+scripts/build.mjs         # bakes the address into frontend/app.js (Vercel build step)
+scripts/seed.mjs          # populate real oaths for the Explorer demo
 ```
 
 ## Deploy to studionet (step by step)
@@ -96,8 +120,8 @@ scripts/build.mjs         # bakes the address into the frontend (Vercel build st
 npm run build     # bakes GENLAYER_CONTRACT_ADDRESS from .env into frontend/index.html
 npm run dev       # serves frontend/ at http://localhost:8080
 ```
-Connect MetaMask; the app auto-switches to the GenLayer Studio network. You can also paste any
-deployed OathBond address into the **Load** box to point the UI at another instance.
+Connect MetaMask; the app auto-switches to the GenLayer Studio network. To point the UI at a
+different OathBond instance, append `?address=0x…` to either route.
 
 ### Deploying the frontend (Vercel)
 `vercel.json` runs `node scripts/build.mjs` as the build command and serves `frontend/`. Set the
