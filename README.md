@@ -7,7 +7,8 @@ When it is time to settle, the Intelligent Contract opens that page **on-chain**
 validator jury reads it and rules **KEPT** or **BROKEN**, and the money moves accordingly —
 no oracle, no human referee.
 
-- **Live app:** _TO BE FILLED AFTER VERCEL DEPLOY_
+- **Live app:** https://oathbond.vercel.app
+- **Source:** https://github.com/phu1271997/oathbond
 - **Contract (studionet):** `0x406ac5a6297D49ae8d97155b1f43DaCB8cdc6903`
 - **Deploy tx:** `0x701fc713febeaaf66a2b512ab03d1c9c1c8258d45bb49921f2b9f0e08e95c87b`
 - **Explorer:** https://explorer-studio.genlayer.com/address/0x406ac5a6297D49ae8d97155b1f43DaCB8cdc6903
