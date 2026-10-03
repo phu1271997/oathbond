@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OathBond — stake your word, let the jury read the proof</title>
+<meta name="description" content="Bond GEN behind a public promise and name the page that proves it. A GenLayer AI validator jury reads the live page on-chain and rules KEPT or BROKEN — no oracle, no referee." />
+<style>
+  :root{
+    --bg:#0e1512;
+    --bg2:#132019;
+    --panel:#15231c;
+    --line:#2c4034;
+    --ink:#eaf3ec;
+    --mute:#8fa89a;
+    --gold:#d8b25a;
+    --green:#4bbf7b;
+    --red:#e2694c;
+    --amber:#e0a93b;
+    --shadow:0 24px 60px -34px #000a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    font-family:"Iowan Old Style",Georgia,"Times New Roman",serif;
+    background:
+      radial-gradient(1100px 500px at 50% -8%, #1c3024 0%, transparent 60%),
+      var(--bg);
+    color:var(--ink);line-height:1.55;padding:0 0 90px;
+  }
+  .wrap{max-width:1000px;margin:0 auto;padding:0 20px}
+  a{color:var(--gold)}
+  code,.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+
+  header.mast{margin-top:40px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+  .seal{
+    display:inline-grid;place-items:center;width:52px;height:52px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #efce84, var(--gold) 60%, #9c7a2e);
+    color:#3a2c08;font-weight:800;font-size:20px;box-shadow:0 6px 18px -8px #000b;
+    font-family:ui-serif,Georgia,serif;
+  }
+  .kicker{font-size:12px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold);margin-top:16px}
+  h1{font-size:clamp(32px,5.6vw,56px);line-height:1.02;letter-spacing:-.01em;margin:6px 0 10px}
+  h1 em{font-style:italic;color:var(--gold)}
+  .sub{max-width:66ch;color:var(--mute);font-size:16px}
+  .pitch{margin-top:16px;display:inline-block;border:1px solid var(--line);
+    background:var(--bg2);padding:9px 13px;font-size:13px;border-radius:8px}
+  .pitch b{color:var(--ink)}
+
+  .walletbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:22px 0 4px;font-size:13px}
+  .addr{background:#0c1410;color:var(--green);padding:6px 11px;border-radius:7px;border:1px solid var(--line);letter-spacing:.03em}
+  .net{color:var(--mute)}
+  button{font-family:inherit;cursor:pointer;border:1px solid var(--gold);border-radius:8px;
+    background:var(--gold);color:#241a04;padding:10px 16px;font-size:13px;font-weight:700;
+    letter-spacing:.04em;transition:transform .05s ease,opacity .15s}
+  button.ghost{background:transparent;color:var(--gold)}
+  button:hover{transform:translateY(-1px)}
+  button:active{transform:translateY(0)}
+  button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+
+  .fundHint{display:none;margin:10px 0;border:1px dashed var(--amber);color:var(--amber);
+    background:#1d1a0c;padding:10px 12px;border-radius:8px;font-size:13px}
+  .fundHint .mono{color:var(--ink)}
+
+  .grid{display:grid;grid-template-columns:1fr;gap:26px;margin-top:30px}
+  @media(min-width:860px){.grid{grid-template-columns:360px 1fr}}
+  .panel{border:1px solid var(--line);background:var(--panel);border-radius:14px;box-shadow:var(--shadow)}
+  .panel h2{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);
+    padding:14px 18px;border-bottom:1px solid var(--line)}
+  .panel .body{padding:18px}
+  label{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:12px 0 5px}
+  input,textarea{width:100%;font-family:inherit;font-size:14px;color:var(--ink);background:#0d1611;
+    border:1px solid var(--line);border-radius:8px;padding:10px 11px}
+  textarea{min-height:76px;resize:vertical}
+  .hintline{font-size:12px;color:var(--mute);margin-top:5px}
+  .addrrow{display:flex;gap:8px;margin-bottom:6px}
+  .addrrow input{font-family:ui-monospace,monospace;font-size:12px}
+
+  .oath{border:1px solid var(--line);border-radius:12px;background:linear-gradient(180deg,#15241d,#111c16);
+    padding:16px 16px 14px;margin-bottom:16px}
+  .otop{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}
+  .oid{font-size:11px;letter-spacing:.2em;color:var(--mute);text-transform:uppercase}
+  .ostatement{font-size:17px;margin-top:3px}
+  .pot{font-family:ui-monospace,monospace;color:var(--gold);font-size:14px;text-align:right;white-space:nowrap}
+  .stamp{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    padding:4px 9px;border-radius:999px;border:1px solid;white-space:nowrap}
+  .s-OPEN{color:var(--amber);border-color:var(--amber)}
+  .s-INCONCLUSIVE{color:#c7b36a;border-color:#c7b36a}
+  .s-SETTLED_KEPT{color:var(--green);border-color:var(--green)}
+  .s-SETTLED_BROKEN{color:var(--red);border-color:var(--red)}
+  .ometa{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;font-size:13px;color:var(--mute)}
+  .ometa b{color:var(--ink);font-weight:600}
+  .ometa a{word-break:break-all}
+  .ruling{margin-top:12px;padding:11px 12px;border-radius:9px;background:#0d1611;border:1px solid var(--line);font-size:14px}
+  .verdict{font-weight:800;letter-spacing:.06em;margin-right:8px}
+  .v-KEPT{color:var(--green)} .v-BROKEN{color:var(--red)} .v-INCONCLUSIVE{color:#c7b36a}
+  .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .actions button{padding:8px 13px;font-size:12px}
+  .backrow{display:flex;gap:8px;align-items:center;margin-top:10px}
+  .backrow input{max-width:150px;font-family:ui-monospace,monospace}
+  .empty{color:var(--mute);text-align:center;padding:30px}
+
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:50;display:none;
+    background:#0c1410;border:1px solid var(--line);color:var(--ink);padding:12px 16px;border-radius:10px;
+    box-shadow:var(--shadow);font-size:14px;max-width:90vw}
+  .toast.err{border-color:var(--red);color:#ffd9cf}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--gold);border-top-color:transparent;
+    border-radius:50%;animation:sp .7s linear infinite;margin-right:8px;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  footer{margin-top:40px;color:var(--mute);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="seal">OB</div>
+    <div class="kicker">On-chain accountability · GenLayer studionet</div>
+    <h1>Oath<em>Bond</em></h1>
+    <p class="sub">Stake GEN behind a public promise and name the page that will prove you kept it.
+      When it is time to settle, the contract opens that page <b>on-chain</b> and a GenLayer validator
+      jury reads it and rules <b>KEPT</b> or <b>BROKEN</b>. Keep your word, get your bond back — break it,
+      and the whole pot is slashed to the beneficiary you named.</p>
+    <div class="pitch">Dies without GenLayer: <b>no oracle and no human referee can read an arbitrary web page and judge whether a promise was kept.</b> The jury does that on-chain.</div>
+
+    <div class="walletbar">
+      <button id="connectBtn">Connect wallet</button>
+      <span id="walletInfo" class="net">Not connected</span>
+      <span class="net">· network: <b>studionet</b></span>
+      <a id="explorerLink" href="#" target="_blank" rel="noopener" class="net">View contract ↗</a>
+    </div>
+    <div id="fundHint" class="fundHint">
+      This wallet looks empty on studionet. Fund it from the Studio <b>Accounts</b> panel before staking.
+      Address: <span id="fundAddr" class="mono"></span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="panel">
+      <h2>Open a bonded oath</h2>
+      <div class="body">
+        <div class="addrrow">
+          <input id="addrInput" placeholder="0x… OathBond contract" />
+          <button class="ghost" id="loadBtn">Load</button>
+        </div>
+        <label>The promise (phrased so a page can prove it)</label>
+        <textarea id="statement" placeholder="e.g. Ship v1.0 to the public releases page by Friday"></textarea>
+        <label>Proof URL (the page that should prove it)</label>
+        <input id="proof" placeholder="https://…" />
+        <label>Beneficiary address (gets the pot if BROKEN)</label>
+        <input id="beneficiary" placeholder="0x… (a charity, counterparty, or backer)" />
+        <label>Extra judging criteria (optional)</label>
+        <textarea id="criteria" placeholder="e.g. must be tagged v1.0 and publicly downloadable"></textarea>
+        <label>Your bond stake (wei)</label>
+        <input id="amount" value="10000" />
+        <div class="hintline">A higher bond is a stronger signal of conviction.</div>
+        <div style="margin-top:14px"><button id="createBtn">Stake &amp; publish oath</button></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>The ledger of oaths</h2>
+      <div class="body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <span id="lockedInfo" class="net">—</span>
+          <button class="ghost" id="refreshBtn">Refresh</button>
+        </div>
+        <div id="oaths"></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>OathBond · Intelligent Contract on GenLayer studionet · MetaMask signs every transaction; no key ever leaves your wallet.</footer>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { createClient } from "https://esm.sh/genlayer-js@1.1.8";
+import { studionet } from "https://esm.sh/genlayer-js@1.1.8/chains";
+
+const $ = (id) => document.getElementById(id);
+
+// Injected at build time by scripts/build.mjs from GENLAYER_CONTRACT_ADDRESS.
+let contractAddress = "0x406ac5a6297D49ae8d97155b1f43DaCB8cdc6903";
+$("addrInput").value = contractAddress.startsWith("0xOATH") ? "" : contractAddress;
+updateExplorerLink();
+
+const CHAIN = studionet;
+const CHAIN_ID_HEX = "0x" + CHAIN.id.toString(16);
+const RPC_URL = "https://studio.genlayer.com/api";
+
+let account = null, client = null;
+const readClient = createClient({ chain: CHAIN });
+
+function toast(msg, isErr=false, hold=false){
+  const t=$("toast"); t.className="toast"+(isErr?" err":"");
+  t.innerHTML=(hold?'<span class="spin"></span>':'')+msg; t.style.display="block";
+  if(!hold){clearTimeout(t._h); t._h=setTimeout(()=>t.style.display="none",4600);}
+}
+function updateExplorerLink(){
+  $("explorerLink").href = `https://explorer-studio.genlayer.com/address/${contractAddress}`;
+}
+const short = (a)=> a && a.length>12 ? a.slice(0,6)+"…"+a.slice(-4) : (a||"");
+const esc = (s)=> String(s??"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n)=>{ try{return BigInt(n).toLocaleString("en-US");}catch{return n;} };
+const isZero = (a)=> !a || /^0x0+$/.test(a);
+
+async function ensureStudioChain(){
+  if(!window.ethereum) throw new Error("MetaMask not detected");
+  try{
+    await window.ethereum.request({method:"wallet_switchEthereumChain",params:[{chainId:CHAIN_ID_HEX}]});
+  }catch(err){
+    if(err.code===4902 || err.code===-32603){
+      await window.ethereum.request({method:"wallet_addEthereumChain",params:[{
+        chainId:CHAIN_ID_HEX,chainName:"GenLayer Studio Network",
+        nativeCurrency:{name:"GEN Token",symbol:"GEN",decimals:18},
+        rpcUrls:[RPC_URL],blockExplorerUrls:["https://explorer-studio.genlayer.com"],
+      }]});
+    }else{throw err;}
+  }
+}
+
+$("connectBtn").onclick = async () => {
+  try{
+    if(!window.ethereum){ toast("Install MetaMask — this dApp signs with MetaMask, not a burner key", true); return; }
+    const accs = await window.ethereum.request({method:"eth_requestAccounts"});
+    if(!accs||!accs.length) throw new Error("No account selected");
+    account = accs[0];
+    await ensureStudioChain();
+    client = createClient({ chain: CHAIN, account });
+    $("walletInfo").textContent = "Connected · "+short(account);
+    $("walletInfo").className = "addr";
+    $("connectBtn").textContent = "Reconnect";
+    toast("Wallet ready on studionet");
+    await checkBalanceHint();
+    refresh();
+  }catch(e){ toast("Connect failed: "+(e.shortMessage||e.message), true); }
+};
+
+async function checkBalanceHint(){
+  try{
+    const bal = await window.ethereum.request({method:"eth_getBalance",params:[account,"latest"]});
+    const zero = !bal || bal==="0x0" || bal==="0x";
+    $("fundHint").style.display = zero ? "block":"none";
+    $("fundAddr").textContent = account;
+  }catch{}
+}
+
+function ready(){
+  if(!client){ toast("Connect your wallet first", true); return false; }
+  if(!/^0x[0-9a-fA-F]{40}$/.test(contractAddress)){ toast("Load a valid contract address first", true); return false; }
+  return true;
+}
+
+$("loadBtn").onclick = () => {
+  const a=$("addrInput").value.trim();
+  if(!/^0x[0-9a-fA-F]{40}$/.test(a)){ toast("Paste a valid 0x… contract address", true); return; }
+  contractAddress=a; updateExplorerLink(); toast("Contract loaded"); refresh();
+};
+$("refreshBtn").onclick = () => refresh();
+
+$("createBtn").onclick = async () => {
+  if(!ready()) return;
+  const statement=$("statement").value.trim();
+  const proof=$("proof").value.trim();
+  const beneficiary=$("beneficiary").value.trim();
+  const criteria=$("criteria").value.trim();
+  const amount=$("amount").value.trim();
+  if(statement.length<12){ toast("Promise too short to verify against", true); return; }
+  if(!/^https?:\/\//i.test(proof)){ toast("Proof URL must start with http(s)://", true); return; }
+  if(beneficiary && !/^0x[0-9a-fA-F]{40}$/.test(beneficiary)){ toast("Beneficiary must be a 0x… address or empty", true); return; }
+  if(!/^\d+$/.test(amount)||amount==="0"){ toast("Bond must be a positive integer (wei)", true); return; }
+  try{
+    toast("Staking &amp; publishing oath — approve in MetaMask…", false, true);
+    const hash = await client.writeContract({
+      address:contractAddress, functionName:"open_oath",
+      args:[statement, proof, beneficiary, criteria], value:BigInt(amount),
+    });
+    toast("Waiting for finalization…", false, true);
+    await client.waitForTransactionReceipt({ hash, status:"FINALIZED" });
+    toast("Oath published &amp; bond staked");
+    $("statement").value=$("proof").value=$("beneficiary").value=$("criteria").value="";
+    $("amount").value="10000";
+    refresh();
+  }catch(e){ toast("Publish failed: "+(e.shortMessage||e.message), true); }
+};
+
+async function send(fn, args, value, pending){
+  if(!ready()) return;
+  try{
+    toast((pending||"Sending")+" — approve in MetaMask…", false, true);
+    const req={ address:contractAddress, functionName:fn, args };
+    if(value!==undefined) req.value=BigInt(value);
+    const hash = await client.writeContract(req);
+    toast("Waiting for the validator jury…", false, true);
+    await client.waitForTransactionReceipt({ hash, status:"FINALIZED" });
+    toast("Done");
+    refresh();
+  }catch(e){ toast("Action failed: "+(e.shortMessage||e.message), true); }
+}
+
+function backFlow(id){
+  const amt = prompt("How much GEN (wei) do you want to back this oath with?", "5000");
+  if(amt===null) return;
+  if(!/^\d+$/.test(amt)||amt==="0"){ toast("Backing must be a positive integer (wei)", true); return; }
+  send("back_oath",[id],amt,"Backing this oath");
+}
+
+async function refresh(){
+  if(!/^0x[0-9a-fA-F]{40}$/.test(contractAddress)){ return; }
+  const c = client || readClient;
+  try{
+    const raw = await c.readContract({ address:contractAddress, functionName:"list_oaths", args:[] });
+    const oaths = JSON.parse(raw);
+    try{
+      const locked = await c.readContract({ address:contractAddress, functionName:"get_total_locked", args:[] });
+      $("lockedInfo").innerHTML = `Total bonded: <b style="color:var(--gold)">${fmt(locked)}</b> wei`;
+    }catch{}
+    render(oaths);
+  }catch(e){ toast("Read failed: "+(e.shortMessage||e.message), true); }
+}
+
+function render(oaths){
+  const box=$("oaths");
+  if(!oaths||!oaths.length){ box.innerHTML='<div class="empty">No oaths yet. Make the first promise.</div>'; return; }
+  box.innerHTML="";
+  for(const o of oaths.slice().reverse()) box.appendChild(card(o));
+}
+
+function card(o){
+  const el=document.createElement("div"); el.className="oath";
+  const me = account ? account.toLowerCase() : "";
+  const status=o.status;
+
+  const beneRow = isZero(o.beneficiary) ? "" :
+    `<div><b>Beneficiary</b> ${short(o.beneficiary)}</div>`;
+
+  el.innerHTML = `
+    <div class="otop">
+      <div>
+        <div class="oid">OATH #${o.id}</div>
+        <div class="ostatement">${esc(o.statement)}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="stamp s-${status}">${status.replace("SETTLED_","")}</div>
+        <div class="pot" style="margin-top:8px">${fmt(o.pot)} wei</div>
+      </div>
+    </div>
+    <div class="ometa">
+      <div><b>Maker</b> ${short(o.maker)}</div>
+      ${beneRow}
+      <div><b>Proof</b> <a href="${esc(o.proof_url)}" target="_blank" rel="noopener">${esc(o.proof_url)}</a></div>
+    </div>`;
+
+  if(o.criteria && o.criteria.trim()){
+    const cr=document.createElement("div"); cr.className="ometa";
+    cr.innerHTML=`<div><b>Criteria</b> ${esc(o.criteria)}</div>`; el.appendChild(cr);
+  }
+
+  if(o.verdict){
+    const r=document.createElement("div"); r.className="ruling";
+    r.innerHTML=`<span class="verdict v-${o.verdict}">${o.verdict}</span><span>${esc(o.rationale||"(no rationale)")}</span>`+
+      (o.escalated?` <span style="color:var(--mute)">· re-checked</span>`:"");
+    el.appendChild(r);
+  }
+
+  const acts=document.createElement("div"); acts.className="actions";
+  if(status==="OPEN"){
+    acts.appendChild(btn("Resolve now", ()=>send("resolve",[o.id],undefined,"Asking the jury to resolve")));
+    if(account) acts.appendChild(btn("Back this oath", ()=>backFlow(o.id), true));
+  }
+  if(status==="INCONCLUSIVE" && o.escalated!==true){
+    acts.appendChild(btn("Escalate (stricter re-check)", ()=>send("escalate",[o.id],undefined,"Escalating for a stricter re-check")));
+  }
+  if(acts.children.length) el.appendChild(acts);
+  return el;
+}
+
+function btn(label, onclick, ghost){
+  const b=document.createElement("button"); b.textContent=label; if(ghost) b.className="ghost"; b.onclick=onclick; return b;
+}
+
+if(/^0x[0-9a-fA-F]{40}$/.test(contractAddress)) refresh();
+</script>
+</body>
+</html>
