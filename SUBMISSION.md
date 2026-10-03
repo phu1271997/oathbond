@@ -30,13 +30,20 @@ inside `_judge`, feeding the LLM prompt. Every oath passes through it.
 
 ## Category tag 2
 ```
-Escrow Claims
+Appeal Review
 ```
-`open_oath` escrows the bond, `back_oath` lets supporters co-stake, and settlement either refunds the
-pot (KEPT) or slashes it to the named beneficiary (BROKEN). Staking / conviction market is the mechanic.
+`escalate()` is a secondary review layer: an INCONCLUSIVE first pass can be re-judged once under
+stricter rules before the bond settles — exactly "secondary/tertiary review layers for initial
+judgments." Distinct from CiteGuard's tag-2 so the two entries don't collide.
 
-**Rejected tags:** `Jury Selection` (jury is GenLayer validators, not app-selected); `Prediction Markets`
-(no odds/orderbook — it is a verifiable commitment, not a bet on an external event).
+**Close alternative (not chosen):** `Escrow Claims` also fits — `open_oath`/`back_oath` lock funds and
+settlement refunds or slashes them. Picked Appeal Review as the more distinctive secondary focus.
+**Rejected:** `Jury Selection` (jury is GenLayer validators, not app-selected).
+
+> Tags above are taken strictly from `~GEN_RULES/tag_taxonomy_specification.md` (Primary →
+> sub-tags only within that Primary). Honest note: both of my current projects are genuinely
+> **Dispute Resolution** at core; I did not mis-tag them into other Primaries just to spread the
+> catalog. Future projects should diversify across the 11 Primaries (see that spec).
 
 ## One-liner (173 chars)
 ```
