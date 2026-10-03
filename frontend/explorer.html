@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OathBond Explorer — resolved oaths &amp; payouts</title>
+<meta name="description" content="Public, read-only ledger of every bonded oath handled by the OathBond contract — verdicts, rationales, pots, and where the money went. No wallet required." />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="wrap">
+  <nav class="top">
+    <a class="brand" href="/" style="text-decoration:none;color:inherit">
+      <span class="seal">OB</span><b>Oath<em>Bond</em></b>
+    </a>
+    <div class="links">
+      <a href="/">Make an oath</a>
+      <a href="/explorer" class="active">Explorer</a>
+    </div>
+    <div class="spacer"></div>
+    <div class="walletbar">
+      <button id="connectBtn">Connect wallet</button>
+      <span id="walletInfo" class="net">Not connected</span>
+      <a id="explorerLink" href="#" target="_blank" rel="noopener" class="net">Contract ↗</a>
+    </div>
+  </nav>
+
+  <div class="kicker">Public ledger · read-only · no wallet required</div>
+  <h1>The <em>Explorer</em></h1>
+  <p class="sub">Every oath this contract has handled, with the jury's verdict, its rationale, the pot,
+    and exactly where the money went. This is the transparency layer — anyone can audit a resolved
+    decision without connecting a wallet.</p>
+
+  <div class="statrow" id="stats"></div>
+
+  <div class="filters" id="filters">
+    <button data-f="ALL" class="on">All</button>
+    <button data-f="OPEN">Open</button>
+    <button data-f="INCONCLUSIVE">Inconclusive</button>
+    <button data-f="SETTLED_KEPT">Kept</button>
+    <button data-f="SETTLED_BROKEN">Broken</button>
+  </div>
+
+  <div id="list"></div>
+
+  <footer>OathBond Explorer · reads <span id="addrFoot" class="mono"></span> on GenLayer studionet.</footer>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initCommon, listOaths, totalLocked, getAddress, EXPLORER,
+         short, esc, fmt, isZero } from "./app.js";
+
+initCommon();
+document.getElementById("addrFoot").textContent = getAddress();
+
+let cache = [];
+let filter = "ALL";
+
+document.getElementById("filters").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  filter = b.dataset.f;
+  [...document.querySelectorAll("#filters button")].forEach(x => x.classList.toggle("on", x === b));
+  paint();
+});
+
+function statBox(n, l) { return `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`; }
+
+async function load() {
+  const list = document.getElementById("list");
+  list.innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+  try {
+    cache = await listOaths();
+    const locked = await totalLocked();
+    const by = (s) => cache.filter(o => o.status === s).length;
+    document.getElementById("stats").innerHTML =
+      statBox(cache.length, "Total oaths") +
+      statBox(by("SETTLED_KEPT"), "Kept") +
+      statBox(by("SETTLED_BROKEN"), "Broken") +
+      statBox(fmt(locked) + " wei", "Currently bonded");
+    paint();
+  } catch (e) {
+    list.innerHTML = `<div class="empty">Could not read the contract: ${esc(e.shortMessage || e.message)}</div>`;
+  }
+}
+
+function paint() {
+  const list = document.getElementById("list");
+  let rows = cache.slice().reverse();
+  if (filter !== "ALL") rows = rows.filter(o => o.status === filter);
+  if (!rows.length) { list.innerHTML = '<div class="empty">No oaths match this filter yet.</div>'; return; }
+  list.innerHTML = "";
+  for (const o of rows) list.appendChild(row(o));
+}
+
+function row(o) {
+  const el = document.createElement("div"); el.className = "oath";
+  const beneRow = isZero(o.beneficiary) ? "" : `<div><b>Beneficiary</b> <a href="${EXPLORER}/address/${o.beneficiary}" target="_blank" rel="noopener">${short(o.beneficiary)}</a></div>`;
+  el.innerHTML = `
+    <div class="otop">
+      <div><div class="oid">OATH #${o.id}</div><div class="ostatement">${esc(o.statement)}</div></div>
+      <div style="text-align:right">
+        <div class="stamp s-${o.status}">${o.status.replace("SETTLED_", "")}</div>
+        <div class="pot" style="margin-top:8px">${fmt(o.pot)} wei</div>
+      </div>
+    </div>
+    <div class="ometa">
+      <div><b>Maker</b> <a href="${EXPLORER}/address/${o.maker}" target="_blank" rel="noopener">${short(o.maker)}</a></div>
+      ${beneRow}
+      <div><b>Proof</b> <a href="${esc(o.proof_url)}" target="_blank" rel="noopener">${esc(o.proof_url)}</a></div>
+    </div>`;
+  if (o.criteria && o.criteria.trim()) {
+    const cr = document.createElement("div"); cr.className = "ometa";
+    cr.innerHTML = `<div><b>Criteria</b> ${esc(o.criteria)}</div>`; el.appendChild(cr);
+  }
+  if (o.verdict) {
+    const r = document.createElement("div"); r.className = "ruling";
+    let payout = "";
+    if (o.status === "SETTLED_KEPT") payout = `<div class="payout">Pot refunded to the maker + backers.</div>`;
+    else if (o.status === "SETTLED_BROKEN") payout = `<div class="payout">Pot slashed to ${isZero(o.beneficiary) ? "the maker (no beneficiary set)" : short(o.beneficiary)}.</div>`;
+    r.innerHTML = `<span class="verdict v-${o.verdict}">${o.verdict}</span><span>${esc(o.rationale || "(no rationale)")}</span>`
+      + (o.escalated ? ` <span class="net">· re-checked</span>` : "") + payout;
+    el.appendChild(r);
+  }
+  return el;
+}
+
+load();
+</script>
+</body>
+</html>
