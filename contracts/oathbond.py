@@ -38,10 +38,17 @@ STORAGE NOTE:
 from genlayer import *
 import json
 import typing
+import datetime
 from dataclasses import dataclass
 
 
 ZERO_ADDR = Address(b"\x00" * 20)
+
+# A first pass that comes back INCONCLUSIVE must sit for this long before anyone
+# can escalate it into a stricter re-check that may harden into a BROKEN ruling.
+# The maker (or a backer) gets a real window to supply/replace evidence before
+# the pot can be slashed on a merely-unverifiable first read.
+CHALLENGE_WINDOW_SECONDS = 86400   # 24 hours
 
 
 @allow_storage
@@ -56,16 +63,18 @@ class Backing:
 @dataclass
 class Oath:
     maker: Address
-    beneficiary: Address        # receives the pot if the oath is BROKEN
+    beneficiary: Address        # receives the pot if the oath is BROKEN (required, non-maker)
     statement: str              # the promise, phrased as a checkable claim
     proof_url: str              # live page that should prove it was kept
     criteria: str               # optional extra judging rules from the maker
+    due_date: str               # ISO-8601 UTC; resolution is rejected before this
     maker_stake: bigint         # maker's own contribution, in wei
     pot: bigint                 # maker_stake + every backing, in wei
     status: str                 # OPEN | INCONCLUSIVE | SETTLED_KEPT | SETTLED_BROKEN
     verdict: str                # KEPT | BROKEN | INCONCLUSIVE | "" (not judged)
     rationale: str              # AI explanation of the ruling
     escalated: bool             # has the single stricter re-check been used
+    inconclusive_since: str     # ISO-8601 UTC when first ruled INCONCLUSIVE ("" otherwise)
 
 
 class Contract(gl.Contract):
@@ -93,6 +102,20 @@ class Contract(gl.Contract):
         except Exception:
             return str(addr)
 
+    # Consensus clock. On GenLayer `datetime.now()` returns the deterministic
+    # block/consensus time, so every validator reads the same instant.
+    def _now(self) -> datetime.datetime:
+        return datetime.datetime.now(datetime.timezone.utc)
+
+    def _parse_dt(self, s: str) -> datetime.datetime:
+        t = s.strip()
+        if t.endswith("Z"):
+            t = t[:-1] + "+00:00"
+        d = datetime.datetime.fromisoformat(t)
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=datetime.timezone.utc)
+        return d
+
     def _record_backing(self, oath_id: u256, backer: Address, amount: int) -> None:
         bid = u256(self.next_backing_id)
         self.backings[bid] = Backing(oath_id=oath_id, backer=backer, amount=bigint(amount))
@@ -107,6 +130,7 @@ class Contract(gl.Contract):
         proof_url: str,
         beneficiary: str,
         criteria: str,
+        due_date: str,
     ) -> u256:
         amount = gl.message.value
         if amount == 0:
@@ -118,11 +142,24 @@ class Contract(gl.Contract):
         if not proof_url.strip().lower().startswith(("http://", "https://")):
             raise Exception("proof_url must be an http(s) URL")
 
-        bene = ZERO_ADDR
-        if len(beneficiary.strip()) > 0:
-            bene = Address(beneficiary.strip())
+        # A broken-oath payout must have an explicit, independent recipient: the
+        # maker cannot stake against themselves, so the beneficiary is required
+        # and must be a real, non-maker, non-zero address.
+        if len(beneficiary.strip()) == 0:
+            raise Exception("A beneficiary address is required for broken-oath payouts")
+        bene = Address(beneficiary.strip())
+        if bene == ZERO_ADDR:
+            raise Exception("Beneficiary cannot be the zero address")
         if bene == gl.message.sender_address:
             raise Exception("Beneficiary cannot be the maker")
+
+        # Enforce an on-chain settlement window: the promise cannot be judged
+        # until its stated due date has passed.
+        if len(due_date.strip()) == 0:
+            raise Exception("A due date is required")
+        due = self._parse_dt(due_date)
+        if due <= self._now():
+            raise Exception("Due date must be in the future")
 
         oath_id = u256(self.next_id)
         self.oaths[oath_id] = Oath(
@@ -131,12 +168,14 @@ class Contract(gl.Contract):
             statement=statement,
             proof_url=proof_url.strip(),
             criteria=criteria,
+            due_date=due_date.strip(),
             maker_stake=bigint(amount),
             pot=bigint(amount),
             status="OPEN",
             verdict="",
             rationale="",
             escalated=False,
+            inconclusive_since="",
         )
         self._record_backing(oath_id, gl.message.sender_address, amount)
         self.next_id = self.next_id + bigint(1)
@@ -167,6 +206,9 @@ class Contract(gl.Contract):
         oath = self._require_oath(oath_id)
         if oath.status != "OPEN":
             raise Exception("Oath is not awaiting resolution")
+        # Settlement window: refuse to judge the promise before its due date.
+        if self._now() < self._parse_dt(oath.due_date):
+            raise Exception("Settlement window not reached; resolve only on or after the due date")
 
         statement = oath.statement
         proof_url = oath.proof_url
@@ -186,6 +228,12 @@ class Contract(gl.Contract):
             raise Exception("Only an inconclusive oath can be escalated")
         if oath.escalated:
             raise Exception("This oath has already used its single re-check")
+        # Challenge window: an inconclusive first read cannot be hardened into a
+        # broken ruling (and its slash) until the delay has elapsed, giving the
+        # maker/backers time to fix or supply evidence first.
+        unlock = self._parse_dt(oath.inconclusive_since) + datetime.timedelta(seconds=CHALLENGE_WINDOW_SECONDS)
+        if self._now() < unlock:
+            raise Exception("Challenge window still open; escalation is not yet allowed")
 
         statement = oath.statement
         proof_url = oath.proof_url
@@ -212,6 +260,9 @@ class Contract(gl.Contract):
             self._slash_to_beneficiary(oath_id, oath)
         else:
             oath.status = "INCONCLUSIVE"
+            # Start the challenge clock the first time it lands inconclusive.
+            if oath.inconclusive_since == "":
+                oath.inconclusive_since = self._now().isoformat()
         return oath.status
 
     def _refund_contributors(self, oath_id: u256, oath: Oath) -> None:
@@ -225,10 +276,11 @@ class Contract(gl.Contract):
         self.total_locked = self.total_locked - moved
 
     def _slash_to_beneficiary(self, oath_id: u256, oath: Oath) -> None:
-        target = oath.beneficiary if oath.beneficiary != ZERO_ADDR else oath.maker
+        # The beneficiary is guaranteed non-zero and non-maker at open time, so
+        # a broken oath always pays the explicit, independent recipient.
         amount = oath.pot
         self.total_locked = self.total_locked - amount
-        gl.get_contract_at(target).emit_transfer(value=u256(amount))
+        gl.get_contract_at(oath.beneficiary).emit_transfer(value=u256(amount))
 
     # -------------------------------------------------------------------------
     # THE NON-DETERMINISTIC HEART - read the proof page + LLM judgement.
@@ -352,6 +404,8 @@ Respond with ONLY a JSON object, no prose, no markdown:
             "statement": oath.statement,
             "proof_url": oath.proof_url,
             "criteria": oath.criteria,
+            "due_date": oath.due_date,
+            "inconclusive_since": oath.inconclusive_since,
             "maker_stake": str(int(oath.maker_stake)),
             "pot": str(int(oath.pot)),
             "status": oath.status,

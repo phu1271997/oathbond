@@ -46,16 +46,40 @@ async function write(fn, args, value, label) {
   return hash;
 }
 
-const bene = "0x0000000000000000000000000000000000000000"; // no beneficiary => back to maker on BROKEN
+// A broken oath now REQUIRES an explicit, non-maker beneficiary. Use a second
+// funded keystore wallet; fall back to a fixed non-maker demo address.
+let benePk = process.env.GENLAYER_PRIVATE_KEY_2;
+let bene;
+if (benePk) {
+  if (!benePk.startsWith("0x")) benePk = "0x" + benePk;
+  bene = createAccount(benePk).address;
+} else {
+  bene = "0x000000000000000000000000000000000000dEaD";
+}
+if (bene.toLowerCase() === account.address.toLowerCase()) {
+  console.error("Beneficiary wallet must differ from the maker wallet"); process.exit(1);
+}
+console.log("Beneficiary (slash recipient on BROKEN):", bene);
+
+// Settlement window: resolution is rejected before the due date, so give each
+// oath a short window, then wait it out before resolving.
+const DUE_LEAD_MS = 20_000;
+const due = new Date(Date.now() + DUE_LEAD_MS).toISOString();
 
 // Oath 0 — a promise a live page can prove KEPT.
 await write("open_oath",
-  ["The GenLayer documentation site is publicly live and reachable", "https://docs.genlayer.com", bene, ""],
+  ["The GenLayer documentation site is publicly live and reachable", "https://docs.genlayer.com", bene, "", due],
   20000, "open #0 (expect KEPT)");
 // Oath 1 — a promise the proof page does NOT substantiate => BROKEN.
 await write("open_oath",
-  ["This page proves we shipped our iOS app to the Apple App Store", "https://example.com", bene, ""],
+  ["This page proves we shipped our iOS app to the Apple App Store", "https://example.com", bene, "", due],
   15000, "open #1 (expect BROKEN)");
+
+const waitMs = Date.parse(due) - Date.now() + 5_000;
+if (waitMs > 0) {
+  console.log(`Waiting ${Math.ceil(waitMs / 1000)}s for the settlement window to open…`);
+  await new Promise((r) => setTimeout(r, waitMs));
+}
 
 console.log("Resolving (nondet jury reads the pages on-chain — this is slower)…");
 await write("resolve", [0], undefined, "resolve #0");

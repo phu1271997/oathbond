@@ -9,9 +9,9 @@ no oracle, no human referee.
 
 - **Live app:** https://oathbond.vercel.app
 - **Source:** https://github.com/phu1271997/oathbond
-- **Contract (studionet):** `0x631e51d15d03504a863CFf393A4B2CB487467820`
-- **Deploy tx:** `0xd3a81741d3e5e7c92a8842e050663e52e456e066be5d6c421a8d3d2419ed90a1`
-- **Explorer:** https://explorer-studio.genlayer.com/address/0x631e51d15d03504a863CFf393A4B2CB487467820
+- **Contract (studionet):** `0x59063CE282015BeE398767430a33007b69F99cA3`
+- **Deploy tx:** `0xe6a33113bdd7e905681fb41c9cb5e20bb3afbf538380c602cc81a8896e6933d8`
+- **Explorer:** https://explorer-studio.genlayer.com/address/0x59063CE282015BeE398767430a33007b69F99cA3
 - **Network:** GenLayer **studionet** (via GenLayer Studio)
 
 ---
@@ -49,21 +49,35 @@ rubric asks for, built on the docs-recommended `gl.vm.run_nondet` (with a fallba
 ## Lifecycle
 
 ```
-maker    -> open_oath(statement, proof_url, beneficiary, criteria)   [stakes GEN]
-backer*  -> back_oath(oath_id)                                       [co-stakes]
-anyone   -> resolve(oath_id)      ...reads proof_url + LLM verdict...
+maker    -> open_oath(statement, proof_url, beneficiary, criteria, due_date)  [stakes GEN]
+backer*  -> back_oath(oath_id)                                                [co-stakes]
+anyone   -> resolve(oath_id)      ...ONLY on/after due_date; reads proof_url + LLM verdict...
   KEPT          -> pot refunded pro-rata to maker + every backer
   BROKEN        -> pot slashed to the beneficiary
-  INCONCLUSIVE  -> stays open for ONE stricter re-check:
-anyone   -> escalate(oath_id)     ...strict re-read; still unverifiable => BROKEN...
+  INCONCLUSIVE  -> stays open; starts a 24h challenge window, then ONE stricter re-check:
+anyone   -> escalate(oath_id)     ...only after the challenge window; still unverifiable => BROKEN...
 ```
 
-### Edge cases handled explicitly
+### Accountability guardrails (enforced on-chain)
+- **Settlement window.** Every oath carries a `due_date`; `resolve()` is rejected before it. A
+  promise cannot be judged — kept or broken — until the time it was given actually arrives. The
+  consensus clock is `datetime.now()`, which GenLayer makes deterministic per block.
+- **Challenge / delay window.** An `INCONCLUSIVE` first pass records `inconclusive_since` and
+  cannot be escalated for `CHALLENGE_WINDOW_SECONDS` (24h). This gives the maker and backers a
+  real window to supply or replace evidence before an unverifiable read can harden into a
+  **BROKEN** ruling and slash the pot.
+- **Explicit non-maker beneficiary.** `open_oath()` requires a beneficiary that is a real,
+  non-zero address and is **not** the maker — a broken oath always pays an independent recipient,
+  never back to the maker. The old "no beneficiary ⇒ refund the maker" fallback is removed.
+
+### Other edge cases handled explicitly
 - Proof page fails to fetch / is empty / irrelevant → `INCONCLUSIVE` (never a blind slash).
 - A stricter re-check that is *still* inconclusive resolves to `BROKEN` — an unprovable promise
   cannot keep the bond forever.
-- Zero stake, too-short statement, non-`http(s)` URL, beneficiary == maker → rejected.
-- Backing a non-open oath, resolving twice → rejected.
+- Zero stake, too-short statement, non-`http(s)` URL, missing/zero/maker beneficiary, past
+  due date → rejected.
+- Backing a non-open oath, resolving twice, resolving before due, escalating inside the challenge
+  window → rejected.
 - Terminal state is written **before** any value transfer (re-entrancy safety).
 
 ## Frontend routes

@@ -48,9 +48,12 @@
         <label>Proof URL (the page that should prove it)</label>
         <input id="proof" placeholder="https://…" />
         <div class="fielderr" id="e_proof">Must start with http:// or https://</div>
-        <label>Beneficiary address — gets the pot if BROKEN (optional)</label>
-        <input id="beneficiary" placeholder="0x… a charity, counterparty, or backer" />
-        <div class="fielderr" id="e_beneficiary">Must be a 0x… address or left empty.</div>
+        <label>Beneficiary address — gets the whole pot if BROKEN (required)</label>
+        <input id="beneficiary" placeholder="0x… a charity, counterparty, or backer (not you)" />
+        <div class="fielderr" id="e_beneficiary">A 0x… address is required, and it cannot be your own.</div>
+        <label>Due date — the promise can only be judged on or after this</label>
+        <input id="due" type="datetime-local" />
+        <div class="fielderr" id="e_due">Pick a due date in the future.</div>
         <label>Extra judging criteria (optional)</label>
         <textarea id="criteria" placeholder="e.g. must be tagged v1.0 and publicly downloadable"></textarea>
         <label>Your bond stake (wei)</label>
@@ -88,21 +91,25 @@ function fieldCheck() {
   const statement = document.getElementById("statement").value.trim();
   const proof = document.getElementById("proof").value.trim();
   const bene = document.getElementById("beneficiary").value.trim();
+  const dueRaw = document.getElementById("due").value.trim();
   const amount = document.getElementById("amount").value.trim();
+  const dueMs = dueRaw ? Date.parse(dueRaw) : NaN;
   const errs = {
     statement: statement.length < 12,
     proof: !/^https?:\/\//i.test(proof),
-    beneficiary: !!bene && !/^0x[0-9a-fA-F]{40}$/.test(bene),
+    beneficiary: !/^0x[0-9a-fA-F]{40}$/.test(bene),
+    due: !dueRaw || Number.isNaN(dueMs) || dueMs <= Date.now(),
     amount: !/^\d+$/.test(amount) || amount === "0",
   };
   for (const k of Object.keys(errs)) {
     document.getElementById("e_" + k).style.display = errs[k] ? "block" : "none";
     document.getElementById(k).classList.toggle("bad", errs[k]);
   }
-  return { ok: !Object.values(errs).some(Boolean), statement, proof, bene,
+  const dueISO = errs.due ? "" : new Date(dueMs).toISOString();
+  return { ok: !Object.values(errs).some(Boolean), statement, proof, bene, dueISO,
            criteria: document.getElementById("criteria").value.trim(), amount };
 }
-["statement","proof","beneficiary","amount"].forEach(id =>
+["statement","proof","beneficiary","due","amount"].forEach(id =>
   document.getElementById(id).addEventListener("input", () => {
     document.getElementById("e_" + id).style.display = "none";
     document.getElementById(id).classList.remove("bad");
@@ -112,19 +119,25 @@ document.getElementById("createBtn").onclick = async () => {
   if (!requireReady()) return;
   const f = fieldCheck();
   if (!f.ok) { toast("Fix the highlighted fields", true); return; }
-  const ok = await send("open_oath", [f.statement, f.proof, f.bene, f.criteria], BigInt(f.amount),
+  const ok = await send("open_oath", [f.statement, f.proof, f.bene, f.criteria, f.dueISO], BigInt(f.amount),
                         "Staking &amp; publishing oath");
   if (ok) {
     document.getElementById("statement").value = document.getElementById("proof").value =
-      document.getElementById("beneficiary").value = document.getElementById("criteria").value = "";
+      document.getElementById("beneficiary").value = document.getElementById("criteria").value =
+      document.getElementById("due").value = "";
     document.getElementById("amount").value = "10000";
     refresh();
   }
 };
 
+const CHALLENGE_WINDOW_MS = 24 * 60 * 60 * 1000;   // mirrors CHALLENGE_WINDOW_SECONDS on-chain
+const fmtDate = (ms) => Number.isNaN(ms) ? "—" : new Date(ms).toLocaleString();
+
 function card(o) {
   const el = document.createElement("div"); el.className = "oath";
   const beneRow = isZero(o.beneficiary) ? "" : `<div><b>Beneficiary</b> ${short(o.beneficiary)}</div>`;
+  const dueMs = o.due_date ? Date.parse(o.due_date) : NaN;
+  const dueRow = o.due_date ? `<div><b>Due</b> ${esc(fmtDate(dueMs))}</div>` : "";
   el.innerHTML = `
     <div class="otop">
       <div><div class="oid">OATH #${o.id}</div><div class="ostatement">${esc(o.statement)}</div></div>
@@ -134,7 +147,7 @@ function card(o) {
       </div>
     </div>
     <div class="ometa">
-      <div><b>Maker</b> ${short(o.maker)}</div>${beneRow}
+      <div><b>Maker</b> ${short(o.maker)}</div>${beneRow}${dueRow}
       <div><b>Proof</b> <a href="${esc(o.proof_url)}" target="_blank" rel="noopener">${esc(o.proof_url)}</a></div>
     </div>`;
   if (o.verdict) {
@@ -145,14 +158,31 @@ function card(o) {
   }
   const acts = document.createElement("div"); acts.className = "actions";
   if (o.status === "OPEN") {
-    acts.appendChild(btn("Resolve now", async () => { if (await send("resolve", [o.id], undefined, "Asking the jury to resolve")) refresh(); }));
+    const resolvable = !Number.isNaN(dueMs) && Date.now() >= dueMs;
+    if (resolvable) {
+      acts.appendChild(btn("Resolve now", async () => { if (await send("resolve", [o.id], undefined, "Asking the jury to resolve")) refresh(); }));
+    } else {
+      acts.appendChild(lockedBtn(`Resolvable after ${fmtDate(dueMs)}`));
+    }
     acts.appendChild(btn("Back this oath", () => backFlow(o.id), true));
   }
   if (o.status === "INCONCLUSIVE" && o.escalated !== true) {
-    acts.appendChild(btn("Escalate (stricter re-check)", async () => { if (await send("escalate", [o.id], undefined, "Escalating for a stricter re-check")) refresh(); }));
+    const sinceMs = o.inconclusive_since ? Date.parse(o.inconclusive_since) : NaN;
+    const unlockMs = sinceMs + CHALLENGE_WINDOW_MS;
+    const canEscalate = !Number.isNaN(unlockMs) && Date.now() >= unlockMs;
+    if (canEscalate) {
+      acts.appendChild(btn("Escalate (stricter re-check)", async () => { if (await send("escalate", [o.id], undefined, "Escalating for a stricter re-check")) refresh(); }));
+    } else {
+      acts.appendChild(lockedBtn(`Challenge window — escalate after ${fmtDate(unlockMs)}`));
+    }
   }
   if (acts.children.length) el.appendChild(acts);
   return el;
+}
+function lockedBtn(label) {
+  const b = document.createElement("button"); b.textContent = label; b.className = "ghost"; b.disabled = true;
+  b.style.opacity = "0.6"; b.style.cursor = "not-allowed"; b.title = "Enforced on-chain";
+  return b;
 }
 function btn(label, onclick, ghost) {
   const b = document.createElement("button"); b.textContent = label; if (ghost) b.className = "ghost"; b.onclick = onclick; return b;

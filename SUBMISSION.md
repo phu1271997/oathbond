@@ -72,7 +72,7 @@ Consensus is on the meaning of the verdict, not byte-identical JSON: each valida
 
 **Step 2 — Connect MetaMask** (Home route). Approve connection + the network switch. If balance is 0, follow the funding banner.
 
-**Step 3 — Open an oath.** Statement (what a page must prove), proof URL, optional beneficiary + criteria, bond in wei (e.g. `10000`). Sign in MetaMask.
+**Step 3 — Open an oath.** Statement (what a page must prove), proof URL, a required non-maker beneficiary (paid if BROKEN), a due date (judging unlocks only after it), optional criteria, bond in wei (e.g. `10000`). Sign in MetaMask.
 
 **Step 4 — Resolve.** Click **Resolve now** on the open oath. Wait ~15–20s — the contract calls `gl.nondet.web.render` and the validator jury runs its LLMs. The oath flips to KEPT / BROKEN / INCONCLUSIVE with the rationale stamped on-chain. Inconclusive oaths expose an **Escalate** button for one stricter re-check.
 
@@ -83,17 +83,17 @@ Consensus is on the meaning of the verdict, not byte-identical JSON: each valida
 
 ## Expected verification outcome (458 chars)
 ```
-Open /explorer with no wallet: the ledger shows a KEPT oath (green, bond refunded to the maker) and a BROKEN oath (red, pot slashed), each with a one-sentence AI rationale. Both are real validator-jury output — open the contract link, find the resolve tx on explorer-studio.genlayer.com, and it shows GENVM RESULT: SUCCESS with CONSENSUS Accepted. Opening a fresh oath and clicking Resolve triggers a ~15-20s consensus wait and writes a new verdict on-chain.
+Open /explorer with no wallet: the ledger shows a KEPT oath (green, bond refunded) and an INCONCLUSIVE oath whose Escalate stays locked until its 24h challenge window elapses, each with a one-sentence AI rationale. Both are real validator-jury output — open the contract link, find the resolve tx on explorer-studio.genlayer.com, and it shows GENVM RESULT: SUCCESS with CONSENSUS Accepted. A fresh oath cannot be resolved before its on-chain due date; once due, Resolve triggers a ~15-20s consensus wait and writes a new verdict on-chain.
 ```
 
 ## Contract link
 ```
-https://explorer-studio.genlayer.com/address/0x631e51d15d03504a863CFf393A4B2CB487467820
+https://explorer-studio.genlayer.com/address/0x59063CE282015BeE398767430a33007b69F99cA3
 ```
 - **Network:** studionet
 - **Status:** Preview (Studio deploy = Preview per Explorer rules)
-- **Address:** `0x631e51d15d03504a863CFf393A4B2CB487467820`
-- **Deploy tx:** `0xd3a81741d3e5e7c92a8842e050663e52e456e066be5d6c421a8d3d2419ed90a1`
+- **Address:** `0x59063CE282015BeE398767430a33007b69F99cA3`
+- **Deploy tx:** `0xe6a33113bdd7e905681fb41c9cb5e20bb3afbf538380c602cc81a8896e6933d8`
 
 ## Website
 ```
@@ -114,8 +114,10 @@ Leave blank, or add your Discord / X / Telegram.
 ## SEEDED ON-CHAIN DEMO (already live)
 | Oath | Statement | Proof URL | Verdict | Money |
 |---|---|---|---|---|
-| #0 | "GenLayer documentation site is publicly live" | https://docs.genlayer.com | **KEPT** | bond refunded to maker |
-| #1 | "This page proves we shipped our iOS app" | https://example.com | **BROKEN** (INCONCLUSIVE → escalate) | pot slashed |
+| #0 | "GenLayer documentation site is publicly live" | https://docs.genlayer.com | **KEPT** | bond refunded to maker + backers |
+| #1 | "This page proves we shipped our iOS app" | https://example.com | **INCONCLUSIVE** | escalatable to BROKEN after the 24h challenge window → pot slashed to the named beneficiary |
+
+Both were opened with a short settlement window and an explicit non-maker beneficiary, then resolved after the due date — exercising the on-chain guardrails.
 
 Reproduce: `source ~/.genlayer/env.sh && node scripts/seed.mjs`
 

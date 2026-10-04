@@ -108,6 +108,7 @@ function row(o) {
     <div class="ometa">
       <div><b>Maker</b> <a href="${EXPLORER}/address/${o.maker}" target="_blank" rel="noopener">${short(o.maker)}</a></div>
       ${beneRow}
+      ${o.due_date ? `<div><b>Due</b> ${esc(new Date(Date.parse(o.due_date)).toLocaleString())}</div>` : ""}
       <div><b>Proof</b> <a href="${esc(o.proof_url)}" target="_blank" rel="noopener">${esc(o.proof_url)}</a></div>
     </div>`;
   if (o.criteria && o.criteria.trim()) {
@@ -118,7 +119,7 @@ function row(o) {
     const r = document.createElement("div"); r.className = "ruling";
     let payout = "";
     if (o.status === "SETTLED_KEPT") payout = `<div class="payout">Pot refunded to the maker + backers.</div>`;
-    else if (o.status === "SETTLED_BROKEN") payout = `<div class="payout">Pot slashed to ${isZero(o.beneficiary) ? "the maker (no beneficiary set)" : short(o.beneficiary)}.</div>`;
+    else if (o.status === "SETTLED_BROKEN") payout = `<div class="payout">Pot slashed to the beneficiary ${short(o.beneficiary)}.</div>`;
     r.innerHTML = `<span class="verdict v-${o.verdict}">${o.verdict}</span><span>${esc(o.rationale || "(no rationale)")}</span>`
       + (o.escalated ? ` <span class="net">· re-checked</span>` : "") + payout;
     el.appendChild(r);
